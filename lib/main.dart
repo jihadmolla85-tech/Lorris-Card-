@@ -1,8 +1,11 @@
 
 import 'package:flutter/material.dart' hide Card;
+
 import 'loris.dart';
+import 'loris_card.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const LorisApp());
 }
 
@@ -39,17 +42,27 @@ class _GameHomeState extends State<GameHome> {
   PlayerCount playerCount = PlayerCount.four;
 
   Map<int, LorisTeam> selectedTeams = {};
+
   int humanSeat = 0;
 
   LorisRoundController? game;
+
   bool busy = false;
 
   String status = 'নতুন ম্যাচ শুরু করুন';
 
+  @override
+  void initState() {
+    super.initState();
+    selectedTeams = _defaultTeams(playerCount);
+  }
+
   Map<int, LorisTeam> _defaultTeams(PlayerCount count) {
     return {
       for (var i = 0; i < count.value; i++)
-        i: i.isEven ? LorisTeam.teamOne : LorisTeam.teamTwo,
+        i: i.isEven
+            ? LorisTeam.teamOne
+            : LorisTeam.teamTwo,
     };
   }
 
@@ -57,6 +70,7 @@ class _GameHomeState extends State<GameHome> {
     final one = selectedTeams.values
         .where((t) => t == LorisTeam.teamOne)
         .length;
+
     final two = selectedTeams.values
         .where((t) => t == LorisTeam.teamTwo)
         .length;
@@ -80,7 +94,7 @@ class _GameHomeState extends State<GameHome> {
 
     final newGame = LorisRoundController(
       playerCount: playerCount,
-      teamBySeat: selectedTeams,
+      teamBySeat: Map<int, LorisTeam>.from(selectedTeams),
       dealerSeat: 0,
       matchScore: score,
     );
@@ -122,20 +136,22 @@ class _GameHomeState extends State<GameHome> {
 
   String cardText(Card card) {
     if (card.isLoris) return '★\nLORIS';
+
     return '${suitSymbol(card.suit)}\n${card.displayName}';
   }
 
   int _cardValue(Card card) {
-    return card.isLoris
-        ? 100
-        : (card.rank ?? 0) +
-            (card.suit == game?.trumpSuit ? 20 : 0);
+    if (card.isLoris) return 100;
+
+    return (card.rank ?? 0) +
+        (card.suit == game?.trumpSuit ? 20 : 0);
   }
 
   int? _chooseAiBid(int seat, int highestBid) {
     final hand = game!.handFor(seat);
 
-    final lorisCount = hand.where((c) => c.isLoris).length;
+    final lorisCount =
+        hand.where((c) => c.isLoris).length;
 
     final highCards = hand.where(
       (c) => !c.isLoris && (c.rank ?? 0) >= 11,
@@ -175,7 +191,7 @@ class _GameHomeState extends State<GameHome> {
   }
 
   void _runAi() {
-    if (busy || game == null) return;
+    if (busy || game == null || !mounted) return;
 
     busy = true;
 
@@ -188,7 +204,9 @@ class _GameHomeState extends State<GameHome> {
         final g = game!;
 
         if (g.phase == RoundPhase.bidding) {
-          final seat = g.currentPlayerSeat!;
+          final seat = g.currentPlayerSeat;
+
+          if (seat == null) break;
 
           if (seat == humanSeat) {
             _refresh('আপনার বিড দেওয়ার পালা');
@@ -205,7 +223,7 @@ class _GameHomeState extends State<GameHome> {
 
           if (g.phase == RoundPhase.trumpSelection) {
             if (g.winningBidderSeat == humanSeat) {
-              _refresh('আপনার বিড জিতেছে—ট্রাম্প নির্বাচন করুন');
+              _refresh('আপনার বিড জিতেছে। ট্রাম্প নির্বাচন করুন');
               break;
             }
 
@@ -226,7 +244,9 @@ class _GameHomeState extends State<GameHome> {
         }
 
         if (g.phase == RoundPhase.playing) {
-          final seat = g.currentPlayerSeat!;
+          final seat = g.currentPlayerSeat;
+
+          if (seat == null) break;
 
           if (seat == humanSeat) {
             _refresh('আপনার কার্ড চালার পালা');
@@ -243,32 +263,31 @@ class _GameHomeState extends State<GameHome> {
           }
 
           legal.sort(
-            (a, b) =>
-                _cardValue(a).compareTo(_cardValue(b)),
+            (a, b) => _cardValue(a).compareTo(_cardValue(b)),
           );
 
           final chosen = legal.first;
 
           g.playCard(seat: seat, card: chosen);
 
-          if (g.currentTrick.isEmpty &&
-              g.phase == RoundPhase.playing) {
-            _refresh(
-              'ট্রিক সম্পন্ন—${seatName(g.trickLeaderSeat!)} পরের চাল দেবে',
-            );
+          if (g.phase == RoundPhase.roundComplete) {
+            _refresh('রাউন্ড শেষ হয়েছে');
+            break;
           }
 
           continue;
         }
 
         if (g.phase == RoundPhase.roundComplete) {
-          _refresh('রাউন্ড শেষ—পরের রাউন্ড শুরু করুন');
+          _refresh('রাউন্ড শেষ। পরের রাউন্ড শুরু করুন');
           break;
         }
 
         if (g.phase == RoundPhase.matchComplete) {
+          final winner = g.matchScore.winner;
+
           _refresh(
-            'ম্যাচ শেষ! ${g.matchScore.winner == LorisMatchWinner.teamOne ? 'দল A' : 'দল B'} জিতেছে',
+            'ম্যাচ শেষ! ${winner == LorisMatchWinner.teamOne ? 'দল A' : 'দল B'} জিতেছে',
           );
           break;
         }
@@ -277,12 +296,18 @@ class _GameHomeState extends State<GameHome> {
       }
     } finally {
       busy = false;
-      if (mounted) setState(() {});
+
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
   void _aiChooseTrump() {
-    final g = game!;
+    final g = game;
+
+    if (g == null || g.winningBidderSeat == null) return;
+
     final seat = g.winningBidderSeat!;
 
     final counts = {
@@ -300,29 +325,78 @@ class _GameHomeState extends State<GameHome> {
   }
 
   void bid(int? value) {
-    final g = game!;
+    final g = game;
 
-    g.submitBid(seat: humanSeat, bid: value);
+    if (g == null || busy) return;
+
+    g.submitBid(
+      seat: humanSeat,
+      bid: value,
+    );
 
     setState(() {
-      status = 'আপনার বিড জমা হয়েছে';
+      status = value == null
+          ? 'আপনি পাস করেছেন'
+          : 'আপনার বিড: $value';
     });
 
     _runAi();
   }
 
   void chooseTrump(Suit suit) {
-    game!.declareTrump(seat: humanSeat, suit: suit);
+    final g = game;
+
+    if (g == null || busy) return;
+
+    g.declareTrump(
+      seat: humanSeat,
+      suit: suit,
+    );
+
+    setState(() {
+      status = 'ট্রাম্প নির্বাচন করা হয়েছে';
+    });
+
     _runAi();
   }
 
   void play(Card card) {
-    final g = game!;
+    final g = game;
+
+    if (g == null || busy) return;
 
     if (!g.isLegalCard(humanSeat, card)) return;
 
-    g.playCard(seat: humanSeat, card: card);
+    g.playCard(
+      seat: humanSeat,
+      card: card,
+    );
+
+    setState(() {
+      status = 'আপনি ${card.displayName} চাল দিয়েছেন';
+    });
+
     _runAi();
+  }
+
+  void startNextRound() {
+    final g = game;
+
+    if (g == null) return;
+
+    setState(() {
+      g.startRound();
+      status = 'নতুন রাউন্ড শুরু হয়েছে';
+    });
+
+    _runAi();
+  }
+
+  void returnToMenu() {
+    setState(() {
+      game = null;
+      status = 'নতুন ম্যাচ শুরু করুন';
+    });
   }
 
   @override
@@ -339,9 +413,18 @@ class _GameHomeState extends State<GameHome> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'মেনু',
+            icon: const Icon(Icons.home),
+            onPressed: returnToMenu,
+          ),
+        ],
       ),
       body: SafeArea(
-        child: g == null ? _startScreen() : _gameScreen(g),
+        child: g == null
+            ? _startScreen()
+            : _gameScreen(g),
       ),
     );
   }
@@ -359,6 +442,7 @@ class _GameHomeState extends State<GameHome> {
               color: Color(0xff65d6a6),
             ),
             const SizedBox(height: 18),
+
             const Text(
               'LORIS CARD GAME',
               style: TextStyle(
@@ -367,14 +451,20 @@ class _GameHomeState extends State<GameHome> {
                 letterSpacing: 2,
               ),
             ),
+
             const SizedBox(height: 12),
+
             const Text(
               'অফলাইন মোড • AI প্রতিপক্ষ',
               style: TextStyle(color: Colors.white70),
             ),
+
             const SizedBox(height: 30),
+
             const Text('খেলোয়াড় নির্বাচন করুন'),
+
             const SizedBox(height: 8),
+
             SegmentedButton<PlayerCount>(
               segments: const [
                 ButtonSegment(
@@ -395,9 +485,13 @@ class _GameHomeState extends State<GameHome> {
                 });
               },
             ),
+
             const SizedBox(height: 18),
+
             const Text('দল নির্বাচন করুন'),
+
             const SizedBox(height: 8),
+
             Wrap(
               spacing: 6,
               runSpacing: 6,
@@ -421,7 +515,9 @@ class _GameHomeState extends State<GameHome> {
                   ),
               ],
             ),
+
             const SizedBox(height: 10),
+
             DropdownButton<int>(
               value: humanSeat,
               dropdownColor: const Color(0xff263238),
@@ -433,9 +529,12 @@ class _GameHomeState extends State<GameHome> {
                   ),
               ],
               onChanged: (v) {
-                setState(() => humanSeat = v ?? 0);
+                setState(() {
+                  humanSeat = v ?? 0;
+                });
               },
             ),
+
             Text(
               teamsBalanced
                   ? 'দুই দলে সমান খেলোয়াড় আছে'
@@ -446,13 +545,17 @@ class _GameHomeState extends State<GameHome> {
                     : Colors.orangeAccent,
               ),
             ),
+
             const SizedBox(height: 18),
+
             FilledButton.icon(
               onPressed: teamsBalanced ? newMatch : null,
               icon: const Icon(Icons.play_arrow),
               label: const Text('নতুন ম্যাচ শুরু করুন'),
             ),
+
             const SizedBox(height: 16),
+
             const Text(
               'এই সংস্করণে একই ফোনে আপনি বনাম AI খেলবেন।',
               textAlign: TextAlign.center,
@@ -474,6 +577,7 @@ class _GameHomeState extends State<GameHome> {
     return Column(
       children: [
         _scoreBar(g),
+
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 5),
           child: Text(
@@ -485,7 +589,10 @@ class _GameHomeState extends State<GameHome> {
             textAlign: TextAlign.center,
           ),
         ),
-        Expanded(child: _table(g)),
+
+        Expanded(
+          child: _table(g),
+        ),
 
         if (g.phase == RoundPhase.bidding &&
             g.currentPlayerSeat == humanSeat)
@@ -497,14 +604,17 @@ class _GameHomeState extends State<GameHome> {
               alignment: WrapAlignment.center,
               children: [
                 OutlinedButton(
-                  onPressed: () => bid(null),
+                  onPressed: busy ? null : () => bid(null),
                   child: const Text('পাস'),
                 ),
-                for (var n = (highest + 1 < 5 ? 5 : highest + 1);
-                    n <= 8;
-                    n++)
+
+                for (
+                  var n = highest + 1 < 5 ? 5 : highest + 1;
+                  n <= 8;
+                  n++
+                )
                   FilledButton(
-                    onPressed: () => bid(n),
+                    onPressed: busy ? null : () => bid(n),
                     child: Text('$n কল'),
                   ),
               ],
@@ -518,10 +628,13 @@ class _GameHomeState extends State<GameHome> {
             child: Wrap(
               spacing: 8,
               children: [
-                for (final s in Suit.values)
+                for (final suit in Suit.values)
                   FilledButton(
-                    onPressed: () => chooseTrump(s),
-                    child: Text(suitSymbol(s)),
+                    onPressed: busy ? null : () => chooseTrump(suit),
+                    child: Text(
+                      suitSymbol(suit),
+                      style: const TextStyle(fontSize: 22),
+                    ),
                   ),
               ],
             ),
@@ -538,11 +651,15 @@ class _GameHomeState extends State<GameHome> {
               separatorBuilder: (_, __) =>
                   const SizedBox(width: 5),
               itemBuilder: (context, i) {
-                final c = hand[i];
-                final legal = g.isLegalCard(humanSeat, c);
+                final card = hand[i];
+
+                final legal =
+                    g.isLegalCard(humanSeat, card);
 
                 return InkWell(
-                  onTap: legal ? () => play(c) : null,
+                  onTap: legal && !busy
+                      ? () => play(card)
+                      : null,
                   child: Opacity(
                     opacity: legal ? 1 : .38,
                     child: Container(
@@ -552,20 +669,22 @@ class _GameHomeState extends State<GameHome> {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(9),
                         border: Border.all(
-                          color: legal ? Colors.amber : Colors.grey,
+                          color: legal
+                              ? Colors.amber
+                              : Colors.grey,
                           width: 2,
                         ),
                       ),
                       child: Center(
                         child: Text(
-                          cardText(c),
+                          cardText(card),
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: c.isLoris
+                            color: card.isLoris
                                 ? Colors.deepPurple
-                                : suitColor(c.suit),
+                                : suitColor(card.suit),
                             fontWeight: FontWeight.bold,
-                            fontSize: c.isLoris ? 13 : 21,
+                            fontSize: card.isLoris ? 13 : 21,
                           ),
                         ),
                       ),
@@ -580,13 +699,7 @@ class _GameHomeState extends State<GameHome> {
           Padding(
             padding: const EdgeInsets.all(12),
             child: FilledButton(
-              onPressed: () {
-                setState(() {
-                  g.startRound();
-                  status = 'নতুন রাউন্ড';
-                });
-                _runAi();
-              },
+              onPressed: startNextRound,
               child: const Text('পরের রাউন্ড'),
             ),
           ),
@@ -594,11 +707,22 @@ class _GameHomeState extends State<GameHome> {
         if (g.phase == RoundPhase.matchComplete)
           Padding(
             padding: const EdgeInsets.all(12),
-            child: FilledButton(
-              onPressed: () {
-                setState(() => game = null);
-              },
-              child: const Text('মেনুতে ফিরুন'),
+            child: Column(
+              children: [
+                Text(
+                  '${g.matchScore.winner == LorisMatchWinner.teamOne ? 'দল A' : 'দল B'} ম্যাচ জিতেছে!',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.amber,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                FilledButton(
+                  onPressed: returnToMenu,
+                  child: const Text('মেনুতে ফিরুন'),
+                ),
+              ],
             ),
           ),
       ],
@@ -708,16 +832,17 @@ class _GameHomeState extends State<GameHome> {
               ),
             ),
           ),
+
           Expanded(
             child: Stack(
               children: [
                 for (var i = 0; i < count; i++)
                   Align(
-                    alignment: positions[
-                      (i - humanSeat + count) % count
-                    ],
+                    alignment:
+                        positions[(i - humanSeat + count) % count],
                     child: _playerAvatar(g, i),
                   ),
+
                 Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -729,33 +854,15 @@ class _GameHomeState extends State<GameHome> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+
                       const SizedBox(height: 7),
+
                       Wrap(
                         alignment: WrapAlignment.center,
                         spacing: 5,
                         children: [
-                          for (final p in g.currentTrick)
-                            Container(
-                              width: 43,
-                              height: 62,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(7),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  cardText(p.card),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: p.card.isLoris
-                                        ? Colors.deepPurple
-                                        : suitColor(p.card.suit),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
+                          for (final played in g.currentTrick)
+                            _smallCard(played.card),
                         ],
                       ),
                     ],
@@ -764,6 +871,7 @@ class _GameHomeState extends State<GameHome> {
               ],
             ),
           ),
+
           Padding(
             padding: const EdgeInsets.all(7),
             child: Text(
@@ -780,6 +888,31 @@ class _GameHomeState extends State<GameHome> {
     );
   }
 
+  Widget _smallCard(Card card) {
+    return Container(
+      width: 43,
+      height: 62,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: Colors.amber),
+      ),
+      child: Center(
+        child: Text(
+          cardText(card),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: card.isLoris
+                ? Colors.deepPurple
+                : suitColor(card.suit),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _playerAvatar(LorisRoundController g, int seat) {
     final active = g.currentPlayerSeat == seat;
     final isHuman = seat == humanSeat;
@@ -788,7 +921,9 @@ class _GameHomeState extends State<GameHome> {
       width: 76,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: active ? Colors.amber.shade800 : Colors.black45,
+        color: active
+            ? Colors.amber.shade800
+            : Colors.black45,
         borderRadius: BorderRadius.circular(13),
         border: Border.all(
           color: active ? Colors.yellow : Colors.white30,
@@ -807,7 +942,9 @@ class _GameHomeState extends State<GameHome> {
               size: 21,
             ),
           ),
+
           const SizedBox(height: 3),
+
           Text(
             seatName(seat),
             textAlign: TextAlign.center,
@@ -816,10 +953,12 @@ class _GameHomeState extends State<GameHome> {
               fontWeight: FontWeight.bold,
             ),
           ),
+
           Text(
             '${g.handFor(seat).length} কার্ড',
             style: const TextStyle(fontSize: 9),
           ),
+
           if (g.trickLeaderSeat == seat)
             const Text(
               'লিডার',
