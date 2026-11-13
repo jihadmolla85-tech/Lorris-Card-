@@ -1,182 +1,207 @@
 
-Widget _table(LorisRoundController g) {
-  final positions = playerCount == PlayerCount.four
-      ? [
-          Alignment.topCenter,
-          Alignment.centerRight,
-          Alignment.bottomCenter,
-          Alignment.centerLeft,
-        ]
-      : [
-          Alignment.topLeft,
-          Alignment.topRight,
-          Alignment.centerRight,
-          Alignment.bottomRight,
-          Alignment.bottomLeft,
-          Alignment.centerLeft,
-        ];
+import 'package:flutter/material.dart' hide Card;
+import 'loris.dart';
 
-  return Container(
-    margin: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      color: const Color(0xff07583f),
-      borderRadius: BorderRadius.circular(100),
-      border: Border.all(
-        color: const Color(0xffc5a45b),
-        width: 4,
-      ),
-      boxShadow: const [
-        BoxShadow(
-          color: Colors.black45,
-          blurRadius: 12,
-          spreadRadius: 2,
-        ),
-      ],
-    ),
-    child: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: Text(
-            'ডিলার: ${seatName(g.dealerSeat)}'
-            '  •  ট্রাম্প: ${g.trumpSuit == null ? 'নির্ধারিত নয়' : suitSymbol(g.trumpSuit!)}',
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 11,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Stack(
-            children: [
-              for (var seat = 0;
-                  seat < playerCount.value;
-                  seat++)
-                Align(
-                  alignment: positions[seat],
-                  child: _playerAvatar(g, seat),
-                ),
-
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'চলতি ট্রিক',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 5,
-                      children: [
-                        for (final p in g.currentTrick)
-                          Container(
-                            width: 43,
-                            height: 62,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius:
-                                  BorderRadius.circular(7),
-                            ),
-                            child: Center(
-                              child: Text(
-                                cardText(p.card),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: p.card.isLoris
-                                      ? Colors.deepPurple
-                                      : suitColor(p.card.suit),
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: Text(
-            'বিড: ${g.contractBid?.toString() ?? 'চলছে'}'
-            '  •  জেতা ট্রিক: ${g.completedTricks.length}/8',
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 11,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
+void main() {
+  runApp(const LorisApp());
 }
 
-Widget _playerAvatar(LorisRoundController g, int seat) {
-  final active = g.currentPlayerSeat == seat;
+class LorisApp extends StatelessWidget {
+  const LorisApp({super.key});
 
-  return Container(
-    width: 90,
-    padding: const EdgeInsets.all(5),
-    decoration: BoxDecoration(
-      color: active
-          ? Colors.amber.shade800
-          : Colors.black45,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(
-        color: active ? Colors.yellow : Colors.white30,
-        width: active ? 2 : 1,
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'LORIS',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xff10251e),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xff087a52),
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
       ),
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CircleAvatar(
-          radius: 19,
-          backgroundColor: Colors.white,
-          child: Icon(
-            Icons.person,
-            color: Colors.green.shade900,
-            size: 25,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          seatName(seat),
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        Text(
-          '${g.handFor(seat).length} কার্ড',
-          style: const TextStyle(fontSize: 9),
-        ),
-        if (g.trickLeaderSeat == seat)
-          const Text(
-            'লিডার',
-            style: TextStyle(
-              fontSize: 9,
-              color: Colors.yellow,
-            ),
-          ),
-      ],
-    ),
-  );
+      home: const GameHome(),
+    );
+  }
 }
 
+class GameHome extends StatefulWidget {
+  const GameHome({super.key});
+
+  @override
+  State<GameHome> createState() => _GameHomeState();
+}
+
+class _GameHomeState extends State<GameHome> {
+  PlayerCount playerCount = PlayerCount.four;
+
+  Map<int, LorisTeam> selectedTeams = {};
+  int humanSeat = 0;
+
+  LorisRoundController? game;
+  bool busy = false;
+
+  String status = 'নতুন ম্যাচ শুরু করুন';
+
+  Map<int, LorisTeam> _defaultTeams(PlayerCount count) {
+    return {
+      for (var i = 0; i < count.value; i++)
+        i: i.isEven ? LorisTeam.teamOne : LorisTeam.teamTwo,
+    };
+  }
+
+  bool get teamsBalanced {
+    final one = selectedTeams.values
+        .where((t) => t == LorisTeam.teamOne)
+        .length;
+    final two = selectedTeams.values
+        .where((t) => t == LorisTeam.teamTwo)
+        .length;
+
+    return one == playerCount.value ~/ 2 &&
+        two == playerCount.value ~/ 2;
+  }
+
+  void _refresh(String message) {
+    if (!mounted) return;
+
+    setState(() {
+      status = message;
+    });
+  }
+
+  void newMatch() {
+    if (!teamsBalanced) return;
+
+    final score = LorisMatchScore();
+
+    final newGame = LorisRoundController(
+      playerCount: playerCount,
+      teamBySeat: selectedTeams,
+      dealerSeat: 0,
+      matchScore: score,
+    );
+
+    newGame.startRound();
+
+    setState(() {
+      game = newGame;
+      status = 'নতুন রাউন্ড শুরু হয়েছে';
+    });
+
+    _runAi();
+  }
+
+  String seatName(int seat) {
+    if (seat == humanSeat) return 'আপনি';
+    return 'AI ${seat + 1}';
+  }
+
+  String suitSymbol(Suit suit) {
+    switch (suit) {
+      case Suit.clubs:
+        return '♣';
+      case Suit.diamonds:
+        return '♦';
+      case Suit.hearts:
+        return '♥';
+      case Suit.spades:
+        return '♠';
+    }
+  }
+
+  Color suitColor(Suit suit) {
+    if (suit == Suit.hearts || suit == Suit.diamonds) {
+      return Colors.red;
+    }
+    return Colors.black;
+  }
+
+  String cardText(Card card) {
+    if (card.isLoris) return '★\nLORIS';
+    return '${suitSymbol(card.suit)}\n${card.displayName}';
+  }
+
+  int _cardValue(Card card) {
+    return card.isLoris
+        ? 100
+        : (card.rank ?? 0) +
+            (card.suit == game?.trumpSuit ? 20 : 0);
+  }
+
+  int? _chooseAiBid(int seat, int highestBid) {
+    final hand = game!.handFor(seat);
+
+    final lorisCount = hand.where((c) => c.isLoris).length;
+
+    final highCards = hand.where(
+      (c) => !c.isLoris && (c.rank ?? 0) >= 11,
+    ).length;
+
+    final suitCounts = <Suit, int>{
+      for (final suit in Suit.values)
+        suit: hand
+            .where((c) => !c.isLoris && c.suit == suit)
+            .length,
+    };
+
+    final longestSuit = suitCounts.values.reduce(
+      (a, b) => a > b ? a : b,
+    );
+
+    final strength =
+        lorisCount * 2 + highCards + longestSuit ~/ 2;
+
+    int? bidValue;
+
+    if (strength >= 8) {
+      bidValue = 8;
+    } else if (strength >= 6) {
+      bidValue = 7;
+    } else if (strength >= 5) {
+      bidValue = 6;
+    } else if (strength >= 4) {
+      bidValue = 5;
+    }
+
+    if (bidValue != null && bidValue <= highestBid) {
+      return null;
+    }
+
+    return bidValue;
+  }
+
+  void _runAi() {
+    if (busy || game == null) return;
+
+    busy = true;
+
+    try {
+      var safetyCounter = 0;
+
+      while (safetyCounter < 100) {
+        safetyCounter++;
+
+        final g = game!;
+
+        if (g.phase == RoundPhase.bidding) {
+          final seat = g.currentPlayerSeat!;
+
+          if (seat == humanSeat) {
+            _refresh('আপনার বিড দেওয়ার পালা');
+            break;
           }
 
-          g.submitBid(seat: seat, bid: bid);
+          final highest = g.bidding!.submissions.values
+              .whereType<int>()
+              .fold<int>(0, (a, b) => a > b ? a : b);
+
+          final aiBid = _chooseAiBid(seat, highest);
+
+          g.submitBid(seat: seat, bid: aiBid);
 
           if (g.phase == RoundPhase.trumpSelection) {
             if (g.winningBidderSeat == humanSeat) {
@@ -217,7 +242,6 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
             break;
           }
 
-          // সংশোধিত comparator
           legal.sort(
             (a, b) =>
                 _cardValue(a).compareTo(_cardValue(b)),
@@ -257,19 +281,15 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
     }
   }
 
-  int _cardValue(Card c) =>
-      c.isLoris ? 100 : (c.rank ?? 0) +
-          (c.suit == game?.trumpSuit ? 20 : 0);
-
   void _aiChooseTrump() {
     final g = game!;
     final seat = g.winningBidderSeat!;
 
     final counts = {
-      for (final s in Suit.values)
-        s: g.handFor(seat)
-            .where((c) => !c.isLoris && c.suit == s)
-            .length
+      for (final suit in Suit.values)
+        suit: g.handFor(seat)
+            .where((c) => !c.isLoris && c.suit == suit)
+            .length,
     };
 
     final suit = counts.entries
@@ -281,7 +301,13 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
 
   void bid(int? value) {
     final g = game!;
+
     g.submitBid(seat: humanSeat, bid: value);
+
+    setState(() {
+      status = 'আপনার বিড জমা হয়েছে';
+    });
+
     _runAi();
   }
 
@@ -298,9 +324,6 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
     g.playCard(seat: humanSeat, card: card);
     _runAi();
   }
-
-  String cardText(Card c) =>
-      c.isLoris ? '★\nLORIS' : '${suitSymbol(c.suit)}\n${c.displayName}';
 
   @override
   Widget build(BuildContext context) {
@@ -323,115 +346,123 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
     );
   }
 
-  Widget _startScreen() => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.style,
-                size: 86,
-                color: Color(0xff65d6a6),
+  Widget _startScreen() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.style,
+              size: 86,
+              color: Color(0xff65d6a6),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'LORIS CARD GAME',
+              style: TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
               ),
-              const SizedBox(height: 18),
-              const Text(
-                'LORIS CARD GAME',
-                style: TextStyle(
-                  fontSize: 25,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 2,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'অফলাইন মোড • AI প্রতিপক্ষ',
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 30),
+            const Text('খেলোয়াড় নির্বাচন করুন'),
+            const SizedBox(height: 8),
+            SegmentedButton<PlayerCount>(
+              segments: const [
+                ButtonSegment(
+                  value: PlayerCount.four,
+                  label: Text('৪ জন'),
                 ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'অফলাইন মোড • AI প্রতিপক্ষ',
-                style: TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 30),
-              const Text('খেলোয়াড় নির্বাচন করুন'),
-              const SizedBox(height: 8),
-              SegmentedButton<PlayerCount>(
-                segments: const [
-                  ButtonSegment(
-                    value: PlayerCount.four,
-                    label: Text('৪ জন'),
-                  ),
-                  ButtonSegment(
-                    value: PlayerCount.six,
-                    label: Text('৬ জন'),
-                  ),
-                ],
-                selected: {playerCount},
-                onSelectionChanged: (v) => setState(() {
+                ButtonSegment(
+                  value: PlayerCount.six,
+                  label: Text('৬ জন'),
+                ),
+              ],
+              selected: {playerCount},
+              onSelectionChanged: (v) {
+                setState(() {
                   playerCount = v.first;
                   selectedTeams = _defaultTeams(playerCount);
                   humanSeat = 0;
-                }),
-              ),
-              const SizedBox(height: 18),
-              const Text('দল ও আপনার আসন নির্বাচন করুন'),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                alignment: WrapAlignment.center,
-                children: [
-                  for (var i = 0; i < playerCount.value; i++)
-                    ChoiceChip(
-                      label: Text(
-                        'P${i + 1}: ${selectedTeams[i] == LorisTeam.teamOne ? 'দল A' : 'দল B'}',
-                      ),
-                      selected:
-                          selectedTeams[i] == LorisTeam.teamOne,
-                      onSelected: (_) => setState(() {
+                });
+              },
+            ),
+            const SizedBox(height: 18),
+            const Text('দল নির্বাচন করুন'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
+                for (var i = 0; i < playerCount.value; i++)
+                  ChoiceChip(
+                    label: Text(
+                      'P${i + 1}: ${selectedTeams[i] == LorisTeam.teamOne ? 'দল A' : 'দল B'}',
+                    ),
+                    selected:
+                        selectedTeams[i] == LorisTeam.teamOne,
+                    onSelected: (_) {
+                      setState(() {
                         selectedTeams[i] =
                             selectedTeams[i] == LorisTeam.teamOne
                                 ? LorisTeam.teamTwo
                                 : LorisTeam.teamOne;
-                      }),
-                    ),
-                ],
+                      });
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            DropdownButton<int>(
+              value: humanSeat,
+              dropdownColor: const Color(0xff263238),
+              items: [
+                for (var i = 0; i < playerCount.value; i++)
+                  DropdownMenuItem(
+                    value: i,
+                    child: Text('আপনার আসন: P${i + 1}'),
+                  ),
+              ],
+              onChanged: (v) {
+                setState(() => humanSeat = v ?? 0);
+              },
+            ),
+            Text(
+              teamsBalanced
+                  ? 'দুই দলে সমান খেলোয়াড় আছে'
+                  : 'দুই দলে সমান খেলোয়াড় রাখুন',
+              style: TextStyle(
+                color: teamsBalanced
+                    ? Colors.greenAccent
+                    : Colors.orangeAccent,
               ),
-              const SizedBox(height: 10),
-              DropdownButton<int>(
-                value: humanSeat,
-                dropdownColor: const Color(0xff263238),
-                items: [
-                  for (var i = 0; i < playerCount.value; i++)
-                    DropdownMenuItem(
-                      value: i,
-                      child: Text('আপনার আসন: P${i + 1}'),
-                    ),
-                ],
-                onChanged: (v) =>
-                    setState(() => humanSeat = v ?? 0),
-              ),
-              Text(
-                teamsBalanced
-                    ? 'দুই দলে সমান খেলোয়াড় আছে'
-                    : 'দুই দলে সমান খেলোয়াড় রাখুন',
-                style: TextStyle(
-                  color: teamsBalanced
-                      ? Colors.greenAccent
-                      : Colors.orangeAccent,
-                ),
-              ),
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                onPressed: teamsBalanced ? newMatch : null,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('নতুন ম্যাচ শুরু করুন'),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'এই সংস্করণে একই ফোনে আপনি বনাম AI খেলবেন।',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white54),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: teamsBalanced ? newMatch : null,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('নতুন ম্যাচ শুরু করুন'),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'এই সংস্করণে একই ফোনে আপনি বনাম AI খেলবেন।',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54),
+            ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 
   Widget _gameScreen(LorisRoundController g) {
     final hand = g.handFor(humanSeat);
@@ -444,17 +475,18 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
       children: [
         _scoreBar(g),
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 5),
           child: Text(
             status,
             style: const TextStyle(
-              fontSize: 16,
+              fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
             textAlign: TextAlign.center,
           ),
         ),
         Expanded(child: _table(g)),
+
         if (g.phase == RoundPhase.bidding &&
             g.currentPlayerSeat == humanSeat)
           Padding(
@@ -468,8 +500,7 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
                   onPressed: () => bid(null),
                   child: const Text('পাস'),
                 ),
-                for (var n =
-                        (highest + 1 < 5 ? 5 : highest + 1);
+                for (var n = (highest + 1 < 5 ? 5 : highest + 1);
                     n <= 8;
                     n++)
                   FilledButton(
@@ -479,6 +510,7 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
               ],
             ),
           ),
+
         if (g.phase == RoundPhase.trumpSelection &&
             g.winningBidderSeat == humanSeat)
           Padding(
@@ -494,10 +526,11 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
               ],
             ),
           ),
+
         if (g.phase == RoundPhase.playing &&
             g.currentPlayerSeat == humanSeat)
           SizedBox(
-            height: 140,
+            height: 135,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -542,6 +575,7 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
               },
             ),
           ),
+
         if (g.phase == RoundPhase.roundComplete)
           Padding(
             padding: const EdgeInsets.all(12),
@@ -556,11 +590,14 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
               child: const Text('পরের রাউন্ড'),
             ),
           ),
+
         if (g.phase == RoundPhase.matchComplete)
           Padding(
             padding: const EdgeInsets.all(12),
             child: FilledButton(
-              onPressed: () => setState(() => game = null),
+              onPressed: () {
+                setState(() => game = null);
+              },
               child: const Text('মেনুতে ফিরুন'),
             ),
           ),
@@ -568,141 +605,231 @@ Widget _playerAvatar(LorisRoundController g, int seat) {
     );
   }
 
-  Widget _scoreBar(LorisRoundController g) => Padding(
-        padding: const EdgeInsets.all(8),
-        child: Row(
-          children: [
-            Expanded(
-              child: _scoreTile(
-                'দল A',
-                score.teamOneScore,
-                g.teamOneTricks,
-              ),
+  Widget _scoreBar(LorisRoundController g) {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Row(
+        children: [
+          Expanded(
+            child: _scoreTile(
+              'দল A',
+              g.matchScore.teamOneScore,
+              g.teamOneTricks,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _scoreTile(
-                'দল B',
-                score.teamTwoScore,
-                g.teamTwoTricks,
-              ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _scoreTile(
+              'দল B',
+              g.matchScore.teamTwoScore,
+              g.teamTwoTricks,
             ),
-          ],
-        ),
-      );
+          ),
+        ],
+      ),
+    );
+  }
 
-  Widget _scoreTile(String name, int points, int tricks) =>
-      Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white10,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            Text(name),
-            Text(
-              '$points',
-              style: const TextStyle(
-                fontSize: 25,
-                fontWeight: FontWeight.bold,
-              ),
+  Widget _scoreTile(String name, int points, int tricks) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.white10,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Text(name),
+          Text(
+            '$points',
+            style: const TextStyle(
+              fontSize: 23,
+              fontWeight: FontWeight.bold,
             ),
-            Text(
-              'এই রাউন্ডে $tricks ট্রিক',
+          ),
+          Text(
+            'এই রাউন্ডে $tricks ট্রিক',
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.white70,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _table(LorisRoundController g) {
+    final count = playerCount.value;
+
+    final positions = count == 4
+        ? [
+            Alignment.bottomCenter,
+            Alignment.centerLeft,
+            Alignment.topCenter,
+            Alignment.centerRight,
+          ]
+        : [
+            Alignment.bottomCenter,
+            Alignment.bottomLeft,
+            Alignment.topLeft,
+            Alignment.topCenter,
+            Alignment.topRight,
+            Alignment.bottomRight,
+          ];
+
+    return Container(
+      margin: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: const Color(0xff07583f),
+        borderRadius: BorderRadius.circular(90),
+        border: Border.all(
+          color: const Color(0xffc5a45b),
+          width: 4,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black45,
+            blurRadius: 12,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(7),
+            child: Text(
+              'ডিলার: ${seatName(g.dealerSeat)}'
+              '  •  ট্রাম্প: ${g.trumpSuit == null ? 'নির্ধারিত নয়' : suitSymbol(g.trumpSuit!)}',
               style: const TextStyle(
-                fontSize: 11,
                 color: Colors.white70,
+                fontSize: 11,
               ),
             ),
-          ],
-        ),
-      );
-
-  Widget _table(LorisRoundController g) => Container(
-        margin: const EdgeInsets.all(12),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: const Color(0xff07583f),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white24, width: 2),
-        ),
-        child: Column(
-          children: [
-            Text(
-              'ডিলার: ${seatName(g.dealerSeat)}   •   ট্রাম্প: ${g.trumpSuit == null ? 'নির্ধারিত নয়' : suitSymbol(g.trumpSuit!)}',
-              style: const TextStyle(color: Colors.white70),
-            ),
-            const Spacer(),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 12,
-              runSpacing: 10,
+          ),
+          Expanded(
+            child: Stack(
               children: [
-                for (var seat = 0; seat < playerCount.value; seat++)
-                  Container(
-                    width: 88,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: g.currentPlayerSeat == seat
-                          ? Colors.amber.shade800
-                          : Colors.black26,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          seatName(seat),
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        Text('${g.handFor(seat).length} কার্ড'),
-                        if (g.trickLeaderSeat == seat)
-                          const Text(
-                            'লিডার',
-                            style: TextStyle(fontSize: 10),
-                          ),
-                      ],
-                    ),
+                for (var i = 0; i < count; i++)
+                  Align(
+                    alignment: positions[
+                      (i - humanSeat + count) % count
+                    ],
+                    child: _playerAvatar(g, i),
                   ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'চলতি ট্রিক',
-              style: TextStyle(color: Colors.white70),
-            ),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              children: [
-                for (final p in g.currentTrick)
-                  Container(
-                    width: 54,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Center(
-                      child: Text(
-                        cardText(p.card),
-                        textAlign: TextAlign.center,
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'চলতি ট্রিক',
                         style: TextStyle(
-                          color: p.card.isLoris
-                              ? Colors.deepPurple
-                              : suitColor(p.card.suit),
+                          color: Colors.white70,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 7),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 5,
+                        children: [
+                          for (final p in g.currentTrick)
+                            Container(
+                              width: 43,
+                              height: 62,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  cardText(p.card),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: p.card.isLoris
+                                        ? Colors.deepPurple
+                                        : suitColor(p.card.suit),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
+                ),
               ],
             ),
-            const Spacer(),
-            Text(
-              'বিড: ${g.contractBid?.toString() ?? 'চলছে'}   •   জেতা ট্রিক: ${g.completedTricks.length}/8',
+          ),
+          Padding(
+            padding: const EdgeInsets.all(7),
+            child: Text(
+              'বিড: ${g.contractBid?.toString() ?? 'চলছে'}'
+              '  •  জেতা ট্রিক: ${g.completedTricks.length}/8',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 11,
+              ),
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _playerAvatar(LorisRoundController g, int seat) {
+    final active = g.currentPlayerSeat == seat;
+    final isHuman = seat == humanSeat;
+
+    return Container(
+      width: 76,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: active ? Colors.amber.shade800 : Colors.black45,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(
+          color: active ? Colors.yellow : Colors.white30,
+          width: active ? 2 : 1,
         ),
-      );
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: Colors.white,
+            child: Icon(
+              isHuman ? Icons.person : Icons.smart_toy,
+              color: Colors.green.shade900,
+              size: 21,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            seatName(seat),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Text(
+            '${g.handFor(seat).length} কার্ড',
+            style: const TextStyle(fontSize: 9),
+          ),
+          if (g.trickLeaderSeat == seat)
+            const Text(
+              'লিডার',
+              style: TextStyle(
+                fontSize: 9,
+                color: Colors.yellow,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
