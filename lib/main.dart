@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart' hide Card;
 
 import 'loris.dart';
-import 'loris_card.dart';
+import 'src/loris_card.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
