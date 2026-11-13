@@ -23,7 +23,6 @@ jobs:
       - name: Generate Android project
         run: flutter create --platforms=android --org com.loris .
 
-
       - name: Check Flutter project
         run: flutter doctor -v
 
@@ -36,5 +35,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LORIS-Android-APk    
-		  path: build/app/outputs/flutter-apk/app-release.apk
+          name: LORIS-Android-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
