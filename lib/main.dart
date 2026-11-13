@@ -1,136 +1,179 @@
 
-import 'package:flutter/material.dart' hide Card;
-import 'loris.dart';
+Widget _table(LorisRoundController g) {
+  final positions = playerCount == PlayerCount.four
+      ? [
+          Alignment.topCenter,
+          Alignment.centerRight,
+          Alignment.bottomCenter,
+          Alignment.centerLeft,
+        ]
+      : [
+          Alignment.topLeft,
+          Alignment.topRight,
+          Alignment.centerRight,
+          Alignment.bottomRight,
+          Alignment.bottomLeft,
+          Alignment.centerLeft,
+        ];
 
-void main() => runApp(const LorisApp());
-
-class LorisApp extends StatelessWidget {
-  const LorisApp({super.key});
-
-  @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'LORIS',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: const Color(0xff087f5b),
-          brightness: Brightness.dark,
+  return Container(
+    margin: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: const Color(0xff07583f),
+      borderRadius: BorderRadius.circular(100),
+      border: Border.all(
+        color: const Color(0xffc5a45b),
+        width: 4,
+      ),
+      boxShadow: const [
+        BoxShadow(
+          color: Colors.black45,
+          blurRadius: 12,
+          spreadRadius: 2,
         ),
-        home: const GameHome(),
-      );
+      ],
+    ),
+    child: Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            'ডিলার: ${seatName(g.dealerSeat)}'
+            '  •  ট্রাম্প: ${g.trumpSuit == null ? 'নির্ধারিত নয়' : suitSymbol(g.trumpSuit!)}',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 11,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Stack(
+            children: [
+              for (var seat = 0;
+                  seat < playerCount.value;
+                  seat++)
+                Align(
+                  alignment: positions[seat],
+                  child: _playerAvatar(g, seat),
+                ),
+
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'চলতি ট্রিক',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 5,
+                      children: [
+                        for (final p in g.currentTrick)
+                          Container(
+                            width: 43,
+                            height: 62,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius:
+                                  BorderRadius.circular(7),
+                            ),
+                            child: Center(
+                              child: Text(
+                                cardText(p.card),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: p.card.isLoris
+                                      ? Colors.deepPurple
+                                      : suitColor(p.card.suit),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            'বিড: ${g.contractBid?.toString() ?? 'চলছে'}'
+            '  •  জেতা ট্রিক: ${g.completedTricks.length}/8',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 11,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
-class GameHome extends StatefulWidget {
-  const GameHome({super.key});
+Widget _playerAvatar(LorisRoundController g, int seat) {
+  final active = g.currentPlayerSeat == seat;
 
-  @override
-  State<GameHome> createState() => _GameHomeState();
+  return Container(
+    width: 90,
+    padding: const EdgeInsets.all(5),
+    decoration: BoxDecoration(
+      color: active
+          ? Colors.amber.shade800
+          : Colors.black45,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(
+        color: active ? Colors.yellow : Colors.white30,
+        width: active ? 2 : 1,
+      ),
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(
+          radius: 19,
+          backgroundColor: Colors.white,
+          child: Icon(
+            Icons.person,
+            color: Colors.green.shade900,
+            size: 25,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          seatName(seat),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          '${g.handFor(seat).length} কার্ড',
+          style: const TextStyle(fontSize: 9),
+        ),
+        if (g.trickLeaderSeat == seat)
+          const Text(
+            'লিডার',
+            style: TextStyle(
+              fontSize: 9,
+              color: Colors.yellow,
+            ),
+          ),
+      ],
+    ),
+  );
 }
 
-class _GameHomeState extends State<GameHome> {
-  PlayerCount playerCount = PlayerCount.four;
-  late LorisMatchScore score;
-  LorisRoundController? game;
-  String status = 'নতুন ম্যাচ শুরু করুন';
-  int humanSeat = 0;
-  late Map<int, LorisTeam> selectedTeams;
-  bool busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    score = LorisMatchScore();
-    selectedTeams = _defaultTeams(playerCount);
-  }
-
-  Map<int, LorisTeam> _defaultTeams(PlayerCount count) => {
-        for (var i = 0; i < count.value; i++)
-          i: i.isEven ? LorisTeam.teamOne : LorisTeam.teamTwo
-      };
-
-  Map<int, LorisTeam> get teams =>
-      Map<int, LorisTeam>.from(selectedTeams);
-
-  bool get teamsBalanced =>
-      selectedTeams.values
-          .where((t) => t == LorisTeam.teamOne)
-          .length ==
-      playerCount.value ~/ 2;
-
-  String seatName(int seat) =>
-      seat == humanSeat ? 'আপনি (P${seat + 1})' : 'AI ${seat + 1}';
-
-  String teamName(LorisTeam team) =>
-      team == LorisTeam.teamOne ? 'দল A' : 'দল B';
-
-  String suitSymbol(Suit suit) => switch (suit) {
-        Suit.clubs => '♣',
-        Suit.diamonds => '♦',
-        Suit.hearts => '♥',
-        Suit.spades => '♠',
-      };
-
-  Color suitColor(Suit suit) =>
-      suit == Suit.hearts || suit == Suit.diamonds
-          ? Colors.redAccent
-          : Colors.white;
-
-  void newMatch() {
-    setState(() {
-      score = LorisMatchScore();
-      game = LorisRoundController(
-        playerCount: playerCount,
-        teamBySeat: teams,
-        dealerSeat: 0,
-        matchScore: score,
-      );
-      status = 'ম্যাচ শুরু হয়েছে';
-      game!.startRound();
-    });
-
-    _runAi();
-  }
-
-  void _refresh(String message) {
-    if (!mounted) return;
-    setState(() => status = message);
-  }
-
-  void _runAi() {
-    if (game == null || busy) return;
-
-    busy = true;
-
-    try {
-      var guard = 0;
-
-      while (game != null && guard++ < 100) {
-        final g = game!;
-
-        if (g.phase == RoundPhase.bidding) {
-          final seat = g.currentPlayerSeat!;
-
-          if (seat == humanSeat) {
-            _refresh('আপনার বিড দেওয়ার পালা');
-            break;
-          }
-
-          final currentHigh = g.bidding!.submissions.values
-              .whereType<int>()
-              .fold<int>(0, (a, b) => a > b ? a : b);
-
-          final hand = g.handFor(seat);
-
-          final strength = hand
-              .where((c) => c.isLoris || (c.rank ?? 0) >= 12)
-              .length;
-
-          int? bid;
-
-          if (strength >= 5 && currentHigh < 7) {
-            bid = currentHigh < 5 ? 5 : currentHigh + 1;
-          } else if (strength >= 7 && currentHigh < 8) {
-            bid = 8;
           }
 
           g.submitBid(seat: seat, bid: bid);
