@@ -17,7 +17,7 @@ class LorisRoundController {
   LorisRoundController({
     required this.playerCount,
     required Map<int, LorisTeam> teamBySeat,
-    required this.dealerSeat,
+    required int dealerSeat,
     required this.matchScore,
     RandomSource? random,
   })  : teamBySeat = Map<int, LorisTeam>.unmodifiable(teamBySeat),
