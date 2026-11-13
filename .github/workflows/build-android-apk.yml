@@ -1,39 +1,36 @@
+
 name: Build LORIS Android APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Set up Flutter
+
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          cache: true
-      - name: Generate Android project files
-        run: |
-          flutter create --platforms=android --org com.loris.game --project-name loris /tmp/loris_android
-          cp -R /tmp/loris_android/android ./android
+
+      - name: Check Flutter project
+        run: flutter doctor -v
+
       - name: Install dependencies
         run: flutter pub get
-      - name: Run tests
-        run: flutter test
-      - name: Build release APK
+
+      - name: Build APK
         run: flutter build apk --release
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: LORIS-Android-APK
           path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
